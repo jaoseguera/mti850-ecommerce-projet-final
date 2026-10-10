@@ -86,6 +86,12 @@ mti850-ecommerce-analytics-projet-final/
 |-- namenode/                           # Volume persistant : Metadonnees HDFS (fsimage, edits)
 |-- datanode1/                          # Volume persistant : Blocs de donnees distribues (Noeud 1)
 |-- datanode2/                          # Volume persistant : Blocs de donnees distribues (Noeud 2)
+|
+|-- notebooks/                          # Notebooks Jupyter interactifs
+|   |-- hello_spark.ipynb               # Notebook de validation de connexion PySpark vers HDFS
+|   `-- MTI850_FinalProject_Repeat_Purchase.ipynb  # Notebook d'analyse complet
+|
+`-- src/                                # Scripts Python et modules utilitaires
 ```
 
 ### Description detaillee des composants de l'infrastructure
@@ -102,6 +108,8 @@ mti850-ecommerce-analytics-projet-final/
   Verifie si le NameNode a deja ete formate. Si ce n'est pas le cas, il execute le formatage initial (`hdfs namenode -format`) sans ecraser les donnees existantes lors des redemarrages futurs, puis lance le demon NameNode.
 - **init-datanode.sh :**
   Configure le repertoire local du DataNode, applique les permissions requises pour l'utilisateur Hadoop et demarre le demon DataNode.
+- **spark-notebook (Conteneur) :**
+  Environnement de travail et client de calcul base sur l'image officielle jupyter/pyspark-notebook. Il embarque Apache Spark, Python 3 et JupyterLab. Connecte au reseau hdfs_network, il execute le code PySpark en mode local distribue et accede directement a HDFS via l'adresse hdfs://namenode:9000. Le dossier racine du projet est monte dans /home/jovyan/work, rendant vos notebooks accessibles immediatement sous notebooks/hello_spark.ipynb.
 - **data/create_samples.ps1 :**
   Script PowerShell utilitaire extrayant automatiquement les 100 premieres lignes de chaque table brute (data/raw/*.csv) vers un sous-dossier d'echantillons. Il permet de prototyper, developper et tester rapidement la logique des scripts Spark en local sans devoir charger ni traiter les 126 Mo de donnees completes.
 - **data/raw (Volume de donnees monte) :**
@@ -145,7 +153,7 @@ Verifier que les conteneurs sont actifs :
 docker compose ps
 ```
 
-Vous devez voir les services `namenode`, `datanode1` et `datanode2` avec le statut `Up`.
+Vous devez voir les 4 services `namenode`, `datanode1`, `datanode2` et `spark-notebook` avec le statut `Up`.
 
 ---
 
@@ -187,11 +195,52 @@ docker compose exec namenode hdfs dfsadmin -report
 ```
 Ce rapport doit indiquer `Live datanodes (2)` avec 0 bloc corrompu ou manquant.
 
-#### 2. Verification par l'interface Web
-Ouvrir votre navigateur a l'adresse suivante :
+#### 2. Verification par les interfaces Web
 - **HDFS NameNode Web UI :** [http://localhost:9870](http://localhost:9870)
+  Depuis le menu **Utilities** -> **Browse the file system**, naviguer dans `/user/mti850/raw` pour visualiser l'ensemble des tables et leurs blocs distribues.
+- **JupyterLab :** [http://localhost:8888](http://localhost:8888)
+  Acceder a l'environnement de developpement avec le jeton d'acces : `mti850`.
+- **Spark Application UI :** [http://localhost:4040](http://localhost:4040)
+  Consulter le graphe d'execution (DAG), les jobs et les stages d'une session Spark active.
 
-Depuis le menu **Utilities** -> **Browse the file system**, naviguer dans `/user/mti850/raw` pour visualiser l'ensemble des tables et leurs blocs distribues.
+#### 3. Verification de la connexion PySpark vers HDFS
+Un notebook de test pret a l'emploi est disponible a l'emplacement `notebooks/hello_spark.ipynb`.
+
+1. Ouvrir JupyterLab a l'adresse [http://localhost:8888](http://localhost:8888) (jeton : `mti850`).
+2. Dans le panneau de navigation a gauche, ouvrir le dossier `notebooks/` puis le fichier `hello_spark.ipynb`.
+3. Executer la cellule contenant le code suivant :
+
+```python
+from pyspark.sql import SparkSession
+
+# Initialisation de la session Spark connectee au cluster
+spark = SparkSession.builder \
+    .appName("MTI850-Exploration-Olist") \
+    .master("local[*]") \
+    .getOrCreate()
+
+# Lecture directe depuis le NameNode distribue (port 9000)
+df_customers = spark.read.csv(
+    "hdfs://namenode:9000/user/mti850/raw/olist_customers_dataset.csv",
+    header=True,
+    inferSchema=True
+)
+
+df_orders = spark.read.csv(
+    "hdfs://namenode:9000/user/mti850/raw/olist_orders_dataset.csv",
+    header=True,
+    inferSchema=True
+)
+
+# Affichage des dimensions
+print("Nombre de clients dans la table :", df_customers.count())
+print("Nombre de commandes dans la table :", df_orders.count())
+
+# Inspection des premieres lignes
+df_customers.show(5)
+```
+
+La sortie confirme le chargement reussi de 99 441 clients et 99 441 commandes directement depuis le stockage distribue HDFS.
 
 ---
 
@@ -213,6 +262,8 @@ docker compose up -d
 
 | Service | Port Hote | Port Interne | Description |
 |---|---|---|---|
+| **JupyterLab** | `8888` | `8888` | Environnement interactif PySpark (jeton : `mti850`) |
+| **Spark Application UI** | `4040` | `4040` | Suivi des jobs Spark, stages et graphes DAG en temps reel |
 | **HDFS NameNode Web UI** | `9870` | `9870` | Interface graphique de gestion HDFS et exploration de fichiers |
 | **HDFS NameNode IPC** | - | `9000` | Port de communication inter-processus HDFS utilise par les DataNodes et Spark |
 | **HDFS DataNode 1** | - | `9866` / `9867` | Transfert de donnees et statut du noeud 1 |

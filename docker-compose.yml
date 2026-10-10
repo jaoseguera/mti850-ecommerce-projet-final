@@ -59,6 +59,25 @@ services:
     networks:
       hdfs_network:
         ipv4_address: 172.30.0.4
+
+  spark-notebook:
+    image: jupyter/pyspark-notebook:latest
+    container_name: spark-notebook
+    hostname: spark-notebook
+    user: root
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+      - JUPYTER_TOKEN=mti850
+    volumes:
+      - ./notebooks:/home/jovyan
+    ports:
+      - "8888:8888"
+      - "4040:4040"
+    depends_on:
+      - namenode
+    networks:
+      hdfs_network:
+        ipv4_address: 172.30.0.5
 networks:
   hdfs_network:
     driver: bridge

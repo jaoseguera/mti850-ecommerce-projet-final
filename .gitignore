@@ -4,3 +4,10 @@ data/samples/*
 datanode1/*
 datanode2/*
 namenode/*
+
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
+*/.ipython/
+*/.local/
+*/.npm/
+*/.jupyter/
