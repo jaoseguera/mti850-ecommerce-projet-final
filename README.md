@@ -1,21 +1,16 @@
 # MTI850 - Final Project: E-Commerce Customer Analytics & Repeat Purchase Prediction
 
-## Use Case 3: E-Commerce Customer Analytics and Recommendation
-
-Projet final dans le cadre du cours **MTI850 - Analytiques des données massives** (Maîtrise en technologies de l'information, ÉTS Montréal).
-
----
-
 ## 1. Description du Projet
 
-Ce projet implémente un pipeline d'analyse de données massives distribué de bout en bout avec **Apache Spark (PySpark)**, **HDFS**, **Spark MLlib** et **Spark Structured Streaming**, appliqué au jeu de données public **Olist Brazilian E-Commerce**.
+Ce projet implémente un pipeline d'analyse de données massives distribué de bout en bout avec **Apache Spark (PySpark)**, **HDFS (Hadoop Distributed File System)**, **Spark MLlib** et **Spark Structured Streaming**, appliqué au jeu de données public **Olist Brazilian E-Commerce**.
 
-### Problématique d'affaires
+### Problematique d'affaires
 Dans le secteur du commerce électronique, le coût d'acquisition de nouveaux clients est considérablement plus élevé que la fidélisation des clients existants. L'objectif est de prédire, à partir du comportement initial d'un client et de son historique de commande, s'il effectuera un **réachat** (*Repeat Purchase / Customer Retention*) dans une fenêtre d'observation future.
 
-### Défi Big Data
+### Defi Big Data
 - **Modèle de données relationnel multi-tables :** Intégration distribuée de 9 tables (commandes, articles, clients, produits, paiements, avis, vendeurs, géolocalisation).
-- **Prévention stricte du *Data Leakage* :** Découpage temporel (*time-based train/test split*) respectant l'ordre chronologique des transactions plutôt qu'un split aléatoire.
+- **Prévention stricte du Data Leakage :** Découpage temporel (*time-based train/test split*) respectant l'ordre chronologique des transactions plutôt qu'un split aléatoire.
+- **Stockage et calcul distribués :** Déploiement d'un cluster HDFS multi-nœuds avec réplication des blocs et traitement parallèle.
 - **Inférence en continu :** Déploiement du modèle entraîné hors-ligne sur un flux d'événements entrants (*Spark Structured Streaming*) avec calcul incrémental et fenêtrage temporel (*event-time windowing*).
 
 ---
@@ -24,35 +19,35 @@ Dans le secteur du commerce électronique, le coût d'acquisition de nouveaux cl
 
 ```mermaid
 flowchart TD
-    subgraph S1["1. Ingestion & Stockage Distribué"]
+    subgraph S1["1. Ingestion et Stockage Distribue"]
         A["Fichiers CSV Olist (9 tables)"] --> B["HDFS Data Lake (/user/mti850/raw)"]
     end
 
-    subgraph S2["2. Traitement PySpark & Préparation"]
-        B --> C["Nettoyage & Casts temporels"]
-        C --> D["Jointures distribuées\n(orders ⋈ items ⋈ customers ⋈ products)"]
-        D --> E["Agrégation au niveau client\n(customer_unique_id)"]
+    subgraph S2["2. Traitement PySpark et Preparation"]
+        B --> C["Nettoyage et Casts temporels"]
+        C --> D["Jointures distribuees\n(orders, items, customers, products)"]
+        D --> E["Agregation au niveau client\n(customer_unique_id)"]
     end
 
-    subgraph S3["3. Feature Engineering & Split Anti-Leakage"]
-        E --> F["Features RFM & Expérience\n(Récence, Fréquence, Montant, Avis)"]
-        F --> G["Découpage Temporel Strict\n(Train: Passé | Test: Futur)"]
+    subgraph S3["3. Feature Engineering et Split Anti-Leakage"]
+        E --> F["Features RFM et Experience\n(Recence, Frequence, Montant, Avis)"]
+        F --> G["Decoupage Temporel Strict\n(Train: Passe | Test: Futur)"]
         G --> H["Spark ML Pipeline\n(StringIndexer, VectorAssembler, Scaler)"]
     end
 
-    subgraph S4["4. Modélisation Hors-Ligne (MLlib)"]
-        H --> I["Baseline heuristique (Règle RFM)"]
-        H --> J["Modèles MLlib (GBT / RandomForest)"]
-        J --> K["Optimisation (ParamGrid & CrossValidator)"]
-        K --> L["Évaluation (ROC-AUC, PR-AUC, F1)"]
-        L --> M["Export PipelineModel sérialisé (/user/mti850/models)"]
+    subgraph S4["4. Modelisation Hors-Ligne (MLlib)"]
+        H --> I["Baseline heuristique (Regle RFM)"]
+        H --> J["Modeles MLlib (GBT / RandomForest)"]
+        J --> K["Optimisation (ParamGrid et CrossValidator)"]
+        K --> L["Evaluation (ROC-AUC, PR-AUC, F1)"]
+        L --> M["Export PipelineModel serialise (/user/mti850/models)"]
     end
 
-    subgraph S5["5. Déploiement Streaming Temps Réel"]
-        N["Flux de nouvelles commandes\n(HDFS /stream_input)"] --> O["Spark Structured Streaming\n(Micro-batches & Event-Time Window)"]
-        M -.->|Chargement du modèle| O
-        O --> P["Inférence au fil de l'eau\n(Score de probabilité de réachat)"]
-        P --> Q["Actions & Rétention Marketing"]
+    subgraph S5["5. Deploiement Streaming Temps Reel"]
+        N["Flux de nouvelles commandes\n(HDFS /stream_input)"] --> O["Spark Structured Streaming\n(Micro-batches et Event-Time Window)"]
+        M -.->|Chargement du modele| O
+        O --> P["Inference au fil de l'eau\n(Score de probabilite de reachat)"]
+        P --> Q["Actions et Retention Marketing"]
     end
 
     style S1 fill:#f0f4f8,stroke:#1e3a8a,stroke-width:2px
@@ -64,98 +59,161 @@ flowchart TD
 
 ---
 
-## 3. Structure du Répertoire
+## 3. Structure du Repertoire et Role des Composants
 
 ```text
 mti850-ecommerce-analytics-projet-final/
-│
-├── .gitignore
-├── Dockerfile
-├── docker-compose.yaml
-├── README.md
-│
-├── data/
-│   ├── raw/                          # Données brutes Olist (CSVs Kaggle)
-│   ├── processed/                    # Données traitées / Parquet
-│   └── stream_input/                 # Fichiers rejoués pour le streaming
-│
-├── notebooks/
-│   └── MTI850_FinalProject_Repeat_Purchase.ipynb  # Notebook principal complet
-│
-└── src/                              # Scripts utilitaires & pipelines
+|
+|-- .gitignore                          # Exclusions Git (donnees brutes, blocs HDFS, caches)
+|-- docker-compose.yml                  # Orchestration du cluster distribue multi-noeuds
+|-- start-hdfs.sh                       # Script d'initialisation et de demarrage du NameNode
+|-- init-datanode.sh                    # Script d'initialisation et de demarrage des DataNodes
+|-- README.md                           # Documentation officielle du projet
+|
+|-- config/                             # Fichiers de configuration Hadoop / HDFS / YARN
+|   |-- core-site.xml                   # Configuration du systeme de fichiers par defaut (HDFS 9000)
+|   |-- hdfs-site.xml                   # Facteur de replication (2) et chemins de donnees NameNode/DataNode
+|   |-- mapred-site.xml                 # Moteur MapReduce associe a YARN
+|   |-- yarn-site.xml                   # Configuration du ResourceManager et des NodeManagers
+|   `-- log4j.properties               # Niveaux de journalisation Hadoop
+|
+|-- data/
+|   |-- create_samples.ps1              # Script PowerShell d'extraction d'echantillons reduits (100 lignes)
+|   |-- raw/                            # Fichiers CSV bruts d'Olist (source locale montee dans le NameNode)
+|   |-- processed/                      # Donnees preparees et transformees (ex. Parquet)
+|   `-- stream_input/                   # Fichiers sources pour la simulation du streaming
+|
+|-- namenode/                           # Volume persistant : Metadonnees HDFS (fsimage, edits)
+|-- datanode1/                          # Volume persistant : Blocs de donnees distribues (Noeud 1)
+|-- datanode2/                          # Volume persistant : Blocs de donnees distribues (Noeud 2)
+```
+
+### Description detaillee des composants de l'infrastructure
+
+- **namenode (Conteneur et Repertoire) :**
+  Cerveau du cluster HDFS. Il maintient l'arborescence des fichiers, les permissions et la table de correspondance entre les fichiers et les blocs physiques distribues. Il n'enregistre pas directement les donnees des fichiers, mais uniquement les metadonnees (`fsimage` et `edits`).
+- **datanode1 et datanode2 (Conteneurs et Repertoires) :**
+  Noeuds de stockage esclaves. Ils stockent physiquement les blocs de donnees decoupés (128 Mo par defaut). Avec un facteur de replication de 2 (`dfs.replication = 2`), chaque bloc ecrit dans HDFS est clone sur `datanode1` et `datanode2`, garantissant la tolerance aux pannes.
+- **config/core-site.xml :**
+  Definit l'adresse racine du systeme de fichiers (`hdfs://namenode:9000`) accessible par tous les noeuds et futurs clients de calcul.
+- **config/hdfs-site.xml :**
+  Fixe le facteur de replication a 2 et declare les chemins internes de stockage `/opt/hadoop/data/nameNode` et `/opt/hadoop/data/dataNode`.
+- **start-hdfs.sh :**
+  Verifie si le NameNode a deja ete formate. Si ce n'est pas le cas, il execute le formatage initial (`hdfs namenode -format`) sans ecraser les donnees existantes lors des redemarrages futurs, puis lance le demon NameNode.
+- **init-datanode.sh :**
+  Configure le repertoire local du DataNode, applique les permissions requises pour l'utilisateur Hadoop et demarre le demon DataNode.
+- **data/create_samples.ps1 :**
+  Script PowerShell utilitaire extrayant automatiquement les 100 premieres lignes de chaque table brute (data/raw/*.csv) vers un sous-dossier d'echantillons. Il permet de prototyper, developper et tester rapidement la logique des scripts Spark en local sans devoir charger ni traiter les 126 Mo de donnees completes.
+- **data/raw (Volume de donnees monte) :**
+  Monte en lecture seule (`:ro`) dans le conteneur `namenode` sous `/data/raw`. Cela permet d'injecter directement les fichiers dans HDFS sans avoir recours a des commandes de copie intermediaires.
+
+---
+
+## 4. Guide de Deploiement et d'Utilisation
+
+L'infrastructure fonctionne via **Docker Compose** sur un reseau interne isole nomme `hdfs_network` (`172.30.0.0/24`).
+
+### Etape 1 : Preparation des donnees brutes
+Telecharger le jeu de donnees public Olist depuis Kaggle :
+[Brazilian E-Commerce Public Dataset by Olist](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce)
+
+Placer l'ensemble des fichiers `.csv` extraits dans le dossier local :
+`data/raw/`
+
+Fichiers requis :
+- `olist_customers_dataset.csv`
+- `olist_geolocation_dataset.csv`
+- `olist_orders_dataset.csv`
+- `olist_order_items_dataset.csv`
+- `olist_order_payments_dataset.csv`
+- `olist_order_reviews_dataset.csv`
+- `olist_products_dataset.csv`
+- `olist_sellers_dataset.csv`
+- `product_category_name_translation.csv`
+
+---
+
+### Etape 2 : Lancement du cluster HDFS
+
+Depuis la racine du projet, lancer les services en arriere-plan :
+```bash
+docker compose up -d
+```
+
+Verifier que les conteneurs sont actifs :
+```bash
+docker compose ps
+```
+
+Vous devez voir les services `namenode`, `datanode1` et `datanode2` avec le statut `Up`.
+
+---
+
+### Etape 3 : Injection initiale des donnees dans HDFS (A executer une seule fois)
+
+Comme le dossier local `data/raw` est monte automatiquement dans le NameNode sous `/data/raw`, l'injection s'effectue directement en ligne de commande.
+
+1. Creer le repertoire cible dans HDFS :
+```bash
+docker compose exec namenode hdfs dfs -mkdir -p /user/mti850/raw
+```
+
+2. Charger tous les fichiers CSV dans HDFS :
+```bash
+docker compose exec namenode hdfs dfs -put /data/raw/*.csv /user/mti850/raw/
+```
+
+*Remarque :* Cette etape n'est requise qu'a la premiere initialisation. Les volumes Docker `namenode`, `datanode1` et `datanode2` persistent automatiquement toutes les donnees meme si vous arretez les conteneurs.
+
+---
+
+### Etape 4 : Verification du systeme et du stockage
+
+#### 1. Verification par ligne de commande
+Lister les fichiers charges dans HDFS :
+```bash
+docker compose exec namenode hdfs dfs -ls /user/mti850/raw
+```
+*Note d'observation :* La deuxieme colonne indique le chiffre `2`, confirmant que chaque fichier possede 2 repliques distribuees.
+
+Verifier l'espace de stockage utilise :
+```bash
+docker compose exec namenode hdfs dfs -du -h /user/mti850/raw
+```
+
+Consulter le rapport de sante du cluster distribué :
+```bash
+docker compose exec namenode hdfs dfsadmin -report
+```
+Ce rapport doit indiquer `Live datanodes (2)` avec 0 bloc corrompu ou manquant.
+
+#### 2. Verification par l'interface Web
+Ouvrir votre navigateur a l'adresse suivante :
+- **HDFS NameNode Web UI :** [http://localhost:9870](http://localhost:9870)
+
+Depuis le menu **Utilities** -> **Browse the file system**, naviguer dans `/user/mti850/raw` pour visualiser l'ensemble des tables et leurs blocs distribues.
+
+---
+
+### Etape 5 : Arret du cluster
+
+Pour arreter proprement l'ensemble des conteneurs :
+```bash
+docker compose down
+```
+
+Pour redemarrer ulterieurement le cluster sans perdre les donnees :
+```bash
+docker compose up -d
 ```
 
 ---
 
-## 4. Démarrage Rapide (Environnement Docker Autonome)
+## 5. Ports Reseau et Services
 
-Le projet s'exécute dans son propre conteneur dédié intégrant **Apache Hadoop 3.5**, **Apache Spark 4.2**, **Python 3.12** et **JupyterLab**.
-
-### Option A : Avec Docker Compose (Recommandé)
-
-1. **Construire l'image :**
-   ```bash
-   docker compose build
-   ```
-
-2. **Démarrer le conteneur en arrière-plan :**
-   ```bash
-   docker compose up -d
-   ```
-
-3. **Vérifier l'état du conteneur :**
-   ```bash
-   docker compose ps
-   ```
-
-4. **Arrêter le conteneur :**
-   ```bash
-   docker compose down
-   ```
-
----
-
-### Option B : Avec la CLI Docker (Direct)
-
-1. **Construire l'image depuis le Dockerfile :**
-   ```bash
-   docker build -t mti850-ecommerce-spark .
-   ```
-
-2. **Rouler le conteneur :**
-   * Sous PowerShell (Windows) :
-     ```powershell
-     docker run -d --name mti850-ecommerce-cluster -p 8888:8888 -p 9870:9870 -p 9000:9000 -p 8088:8088 -p 4040-4045:4040-4045 -v ${PWD}:/workspace mti850-ecommerce-spark
-     ```
-   * Sous Bash / Linux / macOS :
-     ```bash
-     docker run -d --name mti850-ecommerce-cluster -p 8888:8888 -p 9870:9870 -p 9000:9000 -p 8088:8088 -p 4040-4045:4040-4045 -v $(pwd):/workspace mti850-ecommerce-spark
-     ```
-
----
-
-### Accès aux Services Web
-| Service | URL | Note |
-|---|---|---|
-| **JupyterLab** | http://localhost:8888 | Jeton d'accès (*token*) : `mti850` |
-| **HDFS NameNode** | http://localhost:9870 | Gestion du système de fichiers distribué |
-| **YARN ResourceManager** | http://localhost:8088 | Gestionnaire de ressources du cluster |
-| **Spark Application UI** | http://localhost:4040 | Suivi des jobs Spark en temps réel |
-
----
-
-## 5. Dataset
-
-Télécharger les données depuis Kaggle :
-[Brazilian E-Commerce Public Dataset by Olist](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce)
-
-Placer les fichiers `.csv` décompressés dans le dossier `data/raw/` :
-- `olist_customers_dataset.csv`
-- `olist_order_items_dataset.csv`
-- `olist_order_payments_dataset.csv`
-- `olist_order_reviews_dataset.csv`
-- `olist_orders_dataset.csv`
-- `olist_products_dataset.csv`
-- `olist_sellers_dataset.csv`
-- `olist_geolocation_dataset.csv`
-- `product_category_name_translation.csv`
+| Service | Port Hote | Port Interne | Description |
+|---|---|---|---|
+| **HDFS NameNode Web UI** | `9870` | `9870` | Interface graphique de gestion HDFS et exploration de fichiers |
+| **HDFS NameNode IPC** | - | `9000` | Port de communication inter-processus HDFS utilise par les DataNodes et Spark |
+| **HDFS DataNode 1** | - | `9866` / `9867` | Transfert de donnees et statut du noeud 1 |
+| **HDFS DataNode 2** | - | `9866` / `9867` | Transfert de donnees et statut du noeud 2 |

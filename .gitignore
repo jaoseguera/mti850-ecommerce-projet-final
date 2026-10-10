@@ -1,0 +1,6 @@
+data/raw/*
+data/samples/*
+
+datanode1/*
+datanode2/*
+namenode/*
