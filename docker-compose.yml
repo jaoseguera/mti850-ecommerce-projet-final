@@ -3,8 +3,6 @@ services:
     image: apache/hadoop:3.5.0
     container_name: namenode
     hostname: namenode
-    extra_hosts:
-      - "namenode:127.0.0.1"
     user: root
     environment:
       - HADOOP_HOME=/opt/hadoop
