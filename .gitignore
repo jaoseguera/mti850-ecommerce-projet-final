@@ -12,3 +12,4 @@ namenode/*
 */.npm/
 */.jupyter/
 */__pycache__/
+*/.cache/
