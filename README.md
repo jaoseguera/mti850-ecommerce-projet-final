@@ -2,16 +2,17 @@
 
 ## 1. Description du Projet
 
-Ce projet implémente un pipeline d'analyse de données massives distribué de bout en bout avec **Apache Spark (PySpark)**, **HDFS (Hadoop Distributed File System)**, **Spark MLlib** et **Spark Structured Streaming**, appliqué au jeu de données public **Olist Brazilian E-Commerce**.
+Ce projet implemente un pipeline d'analyse de donnees massives distribue de bout en bout avec **Apache Spark (PySpark)**, **HDFS (Hadoop Distributed File System)**, **Spark MLlib** et **Spark Structured Streaming**, applique au jeu de donnees public **Olist Brazilian E-Commerce**.
 
 ### Problematique d'affaires
-Dans le secteur du commerce électronique, le coût d'acquisition de nouveaux clients est considérablement plus élevé que la fidélisation des clients existants. L'objectif est de prédire, à partir du comportement initial d'un client et de son historique de commande, s'il effectuera un **réachat** (*Repeat Purchase / Customer Retention*) dans une fenêtre d'observation future.
+Dans le secteur du commerce electronique, le cout d'acquisition de nouveaux clients est considerablement plus eleve que la fidelisation des clients existants. L'objectif est de predire, a partir du comportement initial d'un client et de son historique de commande, s'il effectuera un **reachat** (*Repeat Purchase / Customer Retention*) dans une fenetre d'observation future de 90 jours.
 
 ### Defi Big Data
-- **Modèle de données relationnel multi-tables :** Intégration distribuée de 9 tables (commandes, articles, clients, produits, paiements, avis, vendeurs, géolocalisation).
-- **Prévention stricte du Data Leakage :** Découpage temporel (*time-based train/test split*) respectant l'ordre chronologique des transactions plutôt qu'un split aléatoire.
-- **Stockage et calcul distribués :** Déploiement d'un cluster HDFS multi-nœuds avec réplication des blocs et traitement parallèle.
-- **Inférence en continu :** Déploiement du modèle entraîné hors-ligne sur un flux d'événements entrants (*Spark Structured Streaming*) avec calcul incrémental et fenêtrage temporel (*event-time windowing*).
+- **Modele de donnees relationnel multi-tables :** Integration distribuee de 9 tables (commandes, articles, clients, produits, paiements, avis, vendeurs, geolocalisation).
+- **Prevention stricte du Data Leakage :** Censure a droite (*right-censoring*) et fenetrage temporel strict respectant l'ordre chronologique des transactions.
+- **Stockage et calcul distribues :** Deploiement d'un cluster HDFS multi-noeuds avec replication des blocs et traitement parallele.
+- **Optimisation de stockage colonnaire :** Conversion Snappy Parquet permettant une reduction drastique des Entrees/Sorties (I/O).
+- **Inference en continu :** Deploiement du modele entraine hors-ligne sur un flux d'evenements entrants (*Spark Structured Streaming*) avec calcul incremental, fenetrage temporel (*event-time windowing*) et gestion du retard (*watermarking*).
 
 ---
 
@@ -23,31 +24,38 @@ flowchart TD
         A["Fichiers CSV Olist (9 tables)"] --> B["HDFS Data Lake (/user/mti850/raw)"]
     end
 
-    subgraph S2["2. Traitement PySpark et Preparation"]
-        B --> C["Nettoyage et Casts temporels"]
-        C --> D["Jointures distribuees\n(orders, items, customers, products)"]
-        D --> E["Agregation au niveau client\n(customer_unique_id)"]
+    subgraph S2["2. Traitement PySpark et Optimisation"]
+        B --> C["Nettoyage et Casts temporels/numeriques"]
+        C --> D["Conversion Parquet Snappy
+(/user/mti850/processed)"]
+        D --> E["Jointures distribuees multi-tables
+(orders, items, customers, payments, reviews)"]
     end
 
-    subgraph S3["3. Feature Engineering et Split Anti-Leakage"]
-        E --> F["Features RFM et Experience\n(Recence, Frequence, Montant, Avis)"]
-        F --> G["Decoupage Temporel Strict\n(Train: Passe | Test: Futur)"]
-        G --> H["Spark ML Pipeline\n(StringIndexer, VectorAssembler, Scaler)"]
+    subgraph S3["3. Feature Engineering et Cible Anti-Leakage"]
+        E --> F["Agregation niveau client (customer_unique_id)"]
+        F --> G["Censure a droite (Cutoff 2018-05-31)
+Fenetre future de 90 jours"]
+        G --> H["12 Features RFM, Logistiques et Sentiment
+Table Gold (/user/mti850/analytics)"]
     end
 
-    subgraph S4["4. Modelisation Hors-Ligne (MLlib)"]
-        H --> I["Baseline heuristique (Regle RFM)"]
-        H --> J["Modeles MLlib (GBT / RandomForest)"]
-        J --> K["Optimisation (ParamGrid et CrossValidator)"]
-        K --> L["Evaluation (ROC-AUC, PR-AUC, F1)"]
+    subgraph S4["4. Modelisation Hors-Ligne (Spark MLlib)"]
+        H --> I["VectorAssembler et StandardScaler"]
+        I --> J["Benchmark : Logistic Regression vs. Random Forest vs. GBT"]
+        J --> K["Optimisation distribuee (ParamGrid + CrossValidator 3-fold)"]
+        K --> L["Matrice de decision d'affaires (Reglage du seuil T=0.08)"]
         L --> M["Export PipelineModel serialise (/user/mti850/models)"]
     end
 
     subgraph S5["5. Deploiement Streaming Temps Reel"]
-        N["Flux de nouvelles commandes\n(HDFS /stream_input)"] --> O["Spark Structured Streaming\n(Micro-batches et Event-Time Window)"]
-        M -.->|Chargement du modele| O
-        O --> P["Inference au fil de l'eau\n(Score de probabilite de reachat)"]
-        P --> Q["Actions et Retention Marketing"]
+        N["Flux de nouvelles commandes
+(HDFS /streaming_input)"] --> O["Spark Structured Streaming
+(Inference en micro-lots)"]
+        M -.->|Chargement du PipelineModel| O
+        O --> P["Inference au fil de l'eau (Table SQL en memoire)"]
+        O --> Q["Agregation par fenetre glissante (10 min) + Watermark"]
+        P --> R["Ciblage Proactif de Retention"]
     end
 
     style S1 fill:#f0f4f8,stroke:#1e3a8a,stroke-width:2px
@@ -88,8 +96,11 @@ mti850-ecommerce-analytics-projet-final/
 |-- datanode2/                          # Volume persistant : Blocs de donnees distribues (Noeud 2)
 |
 |-- notebooks/                          # Notebooks Jupyter interactifs
-|   |-- hello_spark.ipynb               # Notebook de validation de connexion PySpark vers HDFS
-|   `-- MTI850_FinalProject_Repeat_Purchase.ipynb  # Notebook d'analyse complet
+|   |-- 1.0 hello_spark.ipynb           # Validation de la connexion PySpark vers HDFS
+|   |-- 2.1 optimisation_et_nettoyage.ipynb   # Sprint 2.1 : Ingestion CSV vers Parquet (gain 69.2%)
+|   |-- 2.2 exploration_et_cible.ipynb        # Sprint 2.2 : Jointures, cohorte et feature engineering
+|   |-- 3.1_modelisation_retention.ipynb      # Sprint 3 : Modeles MLlib, evaluation et seuillage
+|   `-- 4.0_projet_final_complet.ipynb        # Notebook unifie complet de bout en bout (Remise finale)
 |
 `-- src/                                # Scripts Python et modules utilitaires
 ```
@@ -99,7 +110,7 @@ mti850-ecommerce-analytics-projet-final/
 - **namenode (Conteneur et Repertoire) :**
   Cerveau du cluster HDFS. Il maintient l'arborescence des fichiers, les permissions et la table de correspondance entre les fichiers et les blocs physiques distribues. Il n'enregistre pas directement les donnees des fichiers, mais uniquement les metadonnees (`fsimage` et `edits`).
 - **datanode1 et datanode2 (Conteneurs et Repertoires) :**
-  Noeuds de stockage esclaves. Ils stockent physiquement les blocs de donnees decoupés (128 Mo par defaut). Avec un facteur de replication de 2 (`dfs.replication = 2`), chaque bloc ecrit dans HDFS est clone sur `datanode1` et `datanode2`, garantissant la tolerance aux pannes.
+  Noeuds de stockage esclaves. Ils stockent physiquement les blocs de donnees decoupes (128 Mo par defaut). Avec un facteur de replication de 2 (`dfs.replication = 2`), chaque bloc ecrit dans HDFS est clone sur `datanode1` et `datanode2`, garantissant la tolerance aux pannes.
 - **config/core-site.xml :**
   Definit l'adresse racine du systeme de fichiers (`hdfs://namenode:9000`) accessible par tous les noeuds et futurs clients de calcul.
 - **config/hdfs-site.xml :**
@@ -109,9 +120,9 @@ mti850-ecommerce-analytics-projet-final/
 - **init-datanode.sh :**
   Configure le repertoire local du DataNode, applique les permissions requises pour l'utilisateur Hadoop et demarre le demon DataNode.
 - **spark-notebook (Conteneur) :**
-  Environnement de travail et client de calcul base sur l'image officielle jupyter/pyspark-notebook. Il embarque Apache Spark, Python 3 et JupyterLab. Connecte au reseau hdfs_network, il execute le code PySpark en mode local distribue et accede directement a HDFS via l'adresse hdfs://namenode:9000. Le dossier racine du projet est monte dans /home/jovyan/work, rendant vos notebooks accessibles immediatement sous notebooks/hello_spark.ipynb.
+  Environnement de travail et client de calcul base sur l'image officielle `jupyter/pyspark-notebook`. Il embarque Apache Spark, Python 3 et JupyterLab. Connecte au reseau `hdfs_network`, il execute le code PySpark en mode local distribue et accede directement a HDFS via l'adresse `hdfs://namenode:9000`. Le dossier racine du projet est monte dans `/home/jovyan/work`.
 - **data/create_samples.ps1 :**
-  Script PowerShell utilitaire extrayant automatiquement les 100 premieres lignes de chaque table brute (data/raw/*.csv) vers un sous-dossier d'echantillons. Il permet de prototyper, developper et tester rapidement la logique des scripts Spark en local sans devoir charger ni traiter les 126 Mo de donnees completes.
+  Script PowerShell utilitaire extrayant automatiquement les 100 premieres lignes de chaque table brute (`data/raw/*.csv`) vers un sous-dossier d'echantillons pour le prototypage rapide.
 - **data/raw (Volume de donnees monte) :**
   Monte en lecture seule (`:ro`) dans le conteneur `namenode` sous `/data/raw`. Cela permet d'injecter directement les fichiers dans HDFS sans avoir recours a des commandes de copie intermediaires.
 
@@ -189,7 +200,7 @@ Verifier l'espace de stockage utilise :
 docker compose exec namenode hdfs dfs -du -h /user/mti850/raw
 ```
 
-Consulter le rapport de sante du cluster distribué :
+Consulter le rapport de sante du cluster distribue :
 ```bash
 docker compose exec namenode hdfs dfsadmin -report
 ```
@@ -204,47 +215,30 @@ Ce rapport doit indiquer `Live datanodes (2)` avec 0 bloc corrompu ou manquant.
   Consulter le graphe d'execution (DAG), les jobs et les stages d'une session Spark active.
 
 #### 3. Verification de la connexion PySpark vers HDFS
-Un notebook de test pret a l'emploi est disponible a l'emplacement `notebooks/hello_spark.ipynb`.
-
-1. Ouvrir JupyterLab a l'adresse [http://localhost:8888](http://localhost:8888) (jeton : `mti850`).
-2. Dans le panneau de navigation a gauche, ouvrir le dossier `notebooks/` puis le fichier `hello_spark.ipynb`.
-3. Executer la cellule contenant le code suivant :
-
-```python
-from pyspark.sql import SparkSession
-
-# Initialisation de la session Spark connectee au cluster
-spark = SparkSession.builder \
-    .appName("MTI850-Exploration-Olist") \
-    .master("local[*]") \
-    .getOrCreate()
-
-# Lecture directe depuis le NameNode distribue (port 9000)
-df_customers = spark.read.csv(
-    "hdfs://namenode:9000/user/mti850/raw/olist_customers_dataset.csv",
-    header=True,
-    inferSchema=True
-)
-
-df_orders = spark.read.csv(
-    "hdfs://namenode:9000/user/mti850/raw/olist_orders_dataset.csv",
-    header=True,
-    inferSchema=True
-)
-
-# Affichage des dimensions
-print("Nombre de clients dans la table :", df_customers.count())
-print("Nombre de commandes dans la table :", df_orders.count())
-
-# Inspection des premieres lignes
-df_customers.show(5)
-```
-
-La sortie confirme le chargement reussi de 99 441 clients et 99 441 commandes directement depuis le stockage distribue HDFS.
+Executer le notebook de validation `notebooks/1.0 hello_spark.ipynb` dans JupyterLab pour confirmer la lecture directe de 99 441 clients et 99 441 commandes depuis le port 9000 du NameNode.
 
 ---
 
-### Etape 5 : Arret du cluster
+### Etape 5 : Execution des Notebooks et Pipeline Analytique
+
+Deux modes d'execution sont a la disposition de l'utilisateur :
+
+#### Mode A : Execution par Sprints Incrementaux
+1. **`notebooks/2.1 optimisation_et_nettoyage.ipynb`** :
+   Charge les CSV bruts depuis `/user/mti850/raw/`, applique le typage strict (`TimestampType`, `DoubleType`), filtre les anomalies et sauvegarde les tables nettoyees au format Snappy Parquet dans `/user/mti850/processed/` (gain d'espace mesure : 69.2%).
+2. **`notebooks/2.2 exploration_et_cible.ipynb`** :
+   Realise les jointures distribuees, isole la cohorte de 75 257 premiers acheteurs, applique la censure a droite au 2018-05-31 pour eviter tout Data Leakage, calcule les 12 features analytiques et enregistre la table finale dans `/user/mti850/analytics/first_orders_features.parquet`.
+3. **`notebooks/3.1_modelisation_retention.ipynb`** :
+   Entraine les modeles de classification MLlib (Logistic Regression, Random Forest, GBT), calibre le seuil optimal de decision ($T=0.08$) et simule l'inference en streaming.
+
+#### Mode B : Notebook Maitre Unifie (Remise Finale)
+Le notebook **`notebooks/4.0_projet_final_complet.ipynb`** regroupe l'integralite du pipeline dans un document unique et autonome. En cellule 4, une bascule permet de selectionner le mode de demarrage :
+- **Option A (`run_full_etl = True`)** : Rejoue l'integralite des etapes d'ingestion, de conversion Parquet, de jointure et de feature engineering a partir des CSV bruts.
+- **Option B (`run_full_etl = False`)** : Charge instantanement la table preparee `first_orders_features.parquet` issue des sprints precedents pour se concentrer directement sur la modelisation, la validation croisee (`CrossValidator`), le seuillage d'affaires et le Structured Streaming.
+
+---
+
+### Etape 6 : Arret du cluster
 
 Pour arreter proprement l'ensemble des conteneurs :
 ```bash
@@ -268,3 +262,61 @@ docker compose up -d
 | **HDFS NameNode IPC** | - | `9000` | Port de communication inter-processus HDFS utilise par les DataNodes et Spark |
 | **HDFS DataNode 1** | - | `9866` / `9867` | Transfert de donnees et statut du noeud 1 |
 | **HDFS DataNode 2** | - | `9866` / `9867` | Transfert de donnees et statut du noeud 2 |
+
+---
+
+## 6. Synthese des Resultats Quantitatifs et Benchmarks
+
+### 6.1 Optimisation du Stockage Distribue (CSV vs. Parquet)
+
+La conversion des 9 tables relationnelles brutes en format colonnaire compresse avec Snappy a permis de depasser largement l'objectif de reduction de 60 % :
+
+| Format de Stockage | Emplacement HDFS | Taille Totale Disque | Reduction d'espace |
+| :--- | :--- | :---: | :---: |
+| **CSV Brut (Bronze)** | `/user/mti850/raw/` | 126.0 Mo | Reference (0 %) |
+| **Parquet Snappy (Silver)** | `/user/mti850/processed/` | **38.8 Mo** | **-69.2 %** |
+
+Ce gain reduit drastiquement la bande passante reseau lors des lectures analytiques grace a la projection colonnaire et au pushdown de predicats Catalyst.
+
+### 6.2 Cohorte Analytique et Desequilibre de Classes
+
+- **Taille de la cohorte des premiers achats :** 75 257 clients uniques (`customer_unique_id`).
+- **Date seuil de censure a droite :** `2018-05-31` (garantit une fenetre d'observation future complete de 90 jours pour chaque client, sans fuite d'information).
+- **Distribution de la cible (`did_purchase_again`) :**
+  - Classe 0 (Pas de reachat a 90 jours) : 73 543 clients (**97.72 %**)
+  - Classe 1 (Reachat effectue a 90 jours) : 1 714 clients (**2.28 %**)
+- **Implication methodologique :** L'exactitude globale (*Accuracy*) est une metrique trompeuse (un predicteur constant obtiendrait 97.7 % sans rien predire). L'aire sous la courbe Precision-Rappel (**PR-AUC**) constitue la metrique d'evaluation principale (seuil aleatoire = 0.0228).
+
+### 6.3 Benchmark des Modeles de Machine Learning (Spark MLlib)
+
+Evaluation rigoureuse sur le jeu de test independant (20 % de la cohorte, 15 119 clients) :
+
+| Modele | ROC-AUC | PR-AUC | Gain relatif vs. Baseline aleatoire (PR-AUC) |
+| :--- | :---: | :---: | :---: |
+| **Predicteur Aleatoire (Baseline)** | 0.5000 | 0.0228 | 1.0x |
+| **Logistic Regression** | 0.6172 | 0.1162 | 5.1x |
+| **Random Forest** | 0.6295 | 0.1312 | 5.8x |
+| **Gradient-Boosted Trees (GBT Initial)** | 0.6372 | 0.1377 | 6.0x |
+| **Champion : GBT Optimise (CrossValidator 3-fold)** | **0.6372** | **0.1420** | **6.2x** |
+
+L'optimisation des hyperparametres (`maxDepth=4`, `maxIter=10`) a permis de regulariser les arbres boostes face au bruit statistique des classes rares, hissant le PR-AUC a 0.1420.
+
+### 6.4 Matrice de Decision d'Affaires et Optimisation du Seuil
+
+Avec le seuil par defaut de $T = 0.50$, le modele predit 0 pour l'ensemble des clients en raison de l'asymetrie des classes (Rappel = 0 %). L'analyse de la courbe Precision-Rappel a permis de definir le seuil d'activation optimal pour le marketing proactif :
+
+| Seuil de Decision ($T$) | Precision | Rappel | F1-Score | Clients Cibles (Sur 15 119) | Vrais Acheteurs Identifies | Gain vs. Ciblage Aleatoire |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| $T = 0.02$ | 4.88 % | 78.43 % | 0.0919 | 6 122 | 299 | 1.9x |
+| $T = 0.04$ | 15.30 % | 43.83 % | 0.2268 | 1 091 | 167 | 6.0x |
+| **$T = 0.08$ (Seuil Optimal)** | **47.83 %** | **11.67 %** | **0.1876** | **92** | **44** | **18.9x** |
+| $T = 0.10$ | 52.17 % | 6.28 % | 0.1121 | 46 | 24 | 20.6x |
+| $T = 0.50$ (Defaut standard) | 0.00 % | 0.00 % | 0.0000 | 0 | 0 | - |
+
+**Recommandation d'affaires :** En ciblant les clients depassant la probabilite de $T = 0.08$, l'equipe marketing atteint un taux de conversion de **47.83 %** (presque 1 client cible sur 2 effectue reellement un reachat), representant un gain d'efficacite de **18.9 fois** superieur a une campagne a l'aveugle.
+
+### 6.5 Deploiement Streaming en Continu (Spark Structured Streaming)
+
+- **Persistance :** Export du modele complet sous forme de `PipelineModel` (`/user/mti850/models/gbt_retention_pipeline_model`).
+- **Inference en micro-lots :** Lecture continue depuis `/user/mti850/streaming_input/` et calcul direct du score de probabilite au fil de l'eau.
+- **Gestion du retard et fenetrage temporel :** Application de `withWatermark("event_timestamp", "10 minutes")` et agregation glissante par fenetres de 10 minutes (glissement de 5 minutes) assurant le suivi volumetrique temps reel des flux de commandes sans accumulation d'etat memoire.
